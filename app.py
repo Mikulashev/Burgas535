@@ -5,22 +5,23 @@ import requests
 import streamlit as st
 
 st.set_page_config(
-    page_title="МЕТЕО Дашборд | Бургас & Меден Рудник",
-    page_icon="⚠️",
+    page_title="МЕТЕО Дашборд | Меден Рудник - Бл. 535",
+    page_icon="🏢",
     layout="wide",
 )
 
-st.title("🌧️ Хипер-локален Метео Дашборд: Бургас и Меден Рудник")
+st.title("🏢 Хипер-локален Метео Дашборд: Бл. 535 (Терминал Меден Рудник)")
 st.markdown(
-    "Ранно предупреждение за валежи и наводнения с хронологична 24-часова прогноза (от сега нататък)."
+    "Прецизна 24-часова почасова прогноза за валежите и риск от наводнения, фокусирана строго върху района на **блок 535 / Терминал Меден рудник** (70м н.в.)."
 )
 
 
-# 1. ИЗВЛИЧАНЕ НА ПОЧАСОВА ПРОГНОЗА (От текущия час -> +24 часа)
+# 1. ИЗВЛИЧАНЕ НА ПОЧАСОВА ПРОГНОЗА СТРОГО ЗА КООРДИНАТИТЕ НА БЛ. 535 / ТЕРМИНАЛ МЕДЕН РУДНИК
 @st.cache_data(ttl=1800)
-def fetch_hourly_forecast():
+def fetch_hourly_forecast_block535():
     try:
-        url = "https://api.open-meteo.com/v1/forecast?latitude=42.5048&longitude=27.4626&hourly=temperature_2m,precipitation_probability,precipitation&timezone=Europe/Sofia"
+        # Точни координати за район блок 535 / Терминал Меден рудник (по-висока част, ~70м н.в.)
+        url = "https://api.open-meteo.com/v1/forecast?latitude=42.4785&longitude=27.4345&hourly=temperature_2m,precipitation_probability,precipitation&timezone=Europe/Sofia"
         response = requests.get(url)
         data = response.json()
 
@@ -72,39 +73,17 @@ def fetch_hourly_forecast():
                 "Температура (°C)": [18] * 24,
             }
         )
-        return dummy_df, 4.2, 60
+        return dummy_df, 4.5, 65
 
 
-df_hourly_forecast, api_rain_forecast, api_rain_prob = fetch_hourly_forecast()
+df_hourly_forecast, api_rain_forecast, api_rain_prob = (
+    fetch_hourly_forecast_block535()
+)
 
 
-# 2. МРЕЖА ОТ СТАНЦИИ
+# 2. МРЕЖА ОТ СТАНЦИИ В РАЙОНА
 def get_station_network():
     return {
-        "Микулашев (Weathercloud)": {
-            "Район": "Микулашев / Център",
-            "Код": "d9323277135",
-            "Мрежа": "Weathercloud (6m н.в.)",
-            "Темп. (°C)": 19.2,
-            "Влажност (%)": 78,
-            "Дъжд 24ч (мм)": 0.8,
-        },
-        "IBANEV3": {
-            "Район": "Микулашев / Център",
-            "Код": "IBANEV3",
-            "Мрежа": "Weather Underground",
-            "Темп. (°C)": 19.0,
-            "Влажност (%)": 80,
-            "Дъжд 24ч (мм)": 0.9,
-        },
-        "IBURGA13": {
-            "Район": "Микулашев / Център",
-            "Код": "IBURGA13",
-            "Мрежа": "Weather Underground",
-            "Темп. (°C)": 19.4,
-            "Влажност (%)": 77,
-            "Дъжд 24ч (мм)": 0.7,
-        },
         "Меден Рудник - Бл. 535 (VH)": {
             "Район": "Меден Рудник",
             "Код": "VH-535",
@@ -145,18 +124,27 @@ def get_station_network():
             "Влажност (%)": 83,
             "Дъжд 24ч (мм)": 1.0,
         },
+        "Микулашев (Сравнение - ниска част)": {
+            "Район": "Микулашев / Център",
+            "Код": "d9323277135",
+            "Мрежа": "Weathercloud (6m н.в.)",
+            "Темп. (°C)": 19.2,
+            "Влажност (%)": 78,
+            "Дъжд 24ч (мм)": 0.8,
+        },
     }
 
 
 stations = get_station_network()
 
-# --- СЕКЦИЯ 1: ПОЧАСОВА ПРОГНОЗА СЛЕДВАЩИТЕ 24 ЧАСА ---
-st.header("⏱️ Почасова прогноза за валежи (От момента на отваряне ➔ Напред)")
+# --- СЕКЦИЯ 1: ПОЧАСОВА ПРОГНОЗА СТРОГО ЗА БЛ. 535 / ТЕРМИНАЛ ---
+st.header(
+    "⏱️ Почасова прогноза за валежи: Бл. 535 / Терминал Меден Рудник (От сега ➔ Напред)"
+)
 st.markdown(
-    "Графиката е строго защитена срещу разместване и следва хронологията отляво (сега) надясно (към бъдещето)."
+    "Графиката и таблицата показват прогнозата **строго за микроклимата около блок 535 и транспортния терминал**, подредени хронологично отляво надясно."
 )
 
-# Използваме Altair Chart с изрично зададен ред на масива (sort=None), за да няма никакво разместване
 chart = (
     alt.Chart(df_hourly_forecast)
     .mark_bar()
@@ -164,7 +152,7 @@ chart = (
         x=alt.X(
             "Час:N",
             sort=list(df_hourly_forecast["Час"]),
-            title="Час (Хронологично)",
+            title="Час (Хронологично от сега)",
         ),
         y=alt.Y("Очакван дъжд (мм):Q", title="Очакван дъжд (мм)"),
         tooltip=["Час", "Очакван дъжд (мм)", "Вероятност (%)", "Температура (°C)"],
@@ -174,36 +162,31 @@ chart = (
 
 st.altair_chart(chart, use_container_width=True)
 
-st.subheader("📋 Детайлна часова таблица")
+st.subheader("📋 Детайлна часова таблица за бл. 535 / Терминал")
 st.dataframe(df_hourly_forecast, use_container_width=True)
 
 st.markdown("---")
 
-# --- СЕКЦИЯ 2: ОБОБЩЕНИ КОЛИЧЕСТВА ЗА 24h ПЕРИОД ---
-st.header("📊 Очаквано общо количество за следващото денонощие")
-p_col1, p_col2 = st.columns(2)
+# --- СЕКЦИЯ 2: ОБЩО КОЛИЧЕСТВО ЗА 24 ЧАСА ЗА РАЙОНА ---
+st.header("📊 Очаквано общо количество за следващото денонощие (Бл. 535)")
+col_m1, col_m2 = st.columns(2)
 
-mr_forecast_rain = round(api_rain_forecast * 1.1, 1)
-
-with p_col1:
+with col_m1:
     st.metric(
-        "Микулашев / Център (6m н.в.)",
+        "Прогнозен дъжд (Бл. 535 / Терминал)",
         f"{api_rain_forecast} мм",
         f"Макс. вероятност: {api_rain_prob}%",
     )
     st.progress(int(api_rain_prob))
 
-with p_col2:
-    st.metric(
-        "Меден Рудник (70m н.в.)",
-        f"{mr_forecast_rain} мм",
-        f"Макс. вероятност: {api_rain_prob}%",
+with col_m2:
+    st.info(
+        "💡 **Статус на риска:** Стойности на валежите над 5 мм/ч в зоната на терминала и бл. 535 изискват повишено внимание поради релефните особености на мястото."
     )
-    st.progress(int(api_rain_prob))
 
 st.markdown("---")
 
-# --- СЕКЦИЯ 3: СРАВНИТЕЛНА ТАБЛИЦА НА СТАНЦИИТЕ ---
-st.header("🌐 Станции в района (Живи данни за последните 24ч)")
+# --- СЕКЦИЯ 3: СРАВНИТЕЛНА ТАБЛИЦА НА СТАНЦИИТЕ В РАЙОНА ---
+st.header("🌐 Локални станции в ж.к. Меден Рудник и сравнение")
 df_stations = pd.DataFrame.from_dict(stations, orient="index")
 st.dataframe(df_stations, use_container_width=True)
