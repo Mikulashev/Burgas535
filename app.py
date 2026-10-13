@@ -4,18 +4,18 @@ import requests
 import streamlit as st
 
 st.set_page_config(
-    page_title="МЕТЕО Дашборд | Бургас & Меден Рудник - Часова Прогноза",
+    page_title="МЕТЕО Дашборд | Бургас & Меден Рудник",
     page_icon="⚠️",
     layout="wide",
 )
 
 st.title("🌧️ Хипер-локален Метео Дашборд: Бургас и Меден Рудник")
 st.markdown(
-    "Мониторинг на станциите в реално време и **динамична 24-часова прогноза** (напред от текущия час)."
+    "Ранно предупреждение за валежи и наводнения с хронологична 24-часова прогноза (от сега нататък)."
 )
 
 
-# Функция за извличане на динамична почасова прогноза за следващите 24 часа от текущия час
+# 1. ИЗВЛИЧАНЕ НА ПОЧАСОВА ПРОГНОЗА (От текущия час -> +24 часа)
 @st.cache_data(ttl=1800)
 def fetch_hourly_forecast():
     try:
@@ -29,22 +29,22 @@ def fetch_hourly_forecast():
         precips = hourly_data["precipitation"]
         probs = hourly_data["precipitation_probability"]
 
-        # Намираме текущия момент, за да започнем прогнозата от актуалния час напред
+        # Започваме от точния час на отваряне
         now = datetime.datetime.now()
         start_idx = 0
         for i, t_str in enumerate(times):
-          t_dt = datetime.datetime.fromisoformat(t_str)
-          if t_dt >= now:
-            start_idx = i
-            break
+            t_dt = datetime.datetime.fromisoformat(t_str)
+            if t_dt >= now:
+                start_idx = i
+                break
 
-        # Взимаме точно 24 часа напред от текущия час
         end_idx = start_idx + 24
         times_slice = times[start_idx:end_idx]
         temps_slice = temps[start_idx:end_idx]
         precips_slice = precips[start_idx:end_idx]
         probs_slice = probs[start_idx:end_idx]
 
+        # Подреждане хронологично отляво надясно (от сега към +24ч)
         formatted_times = [
             datetime.datetime.fromisoformat(t).strftime("%H:00 (%d.%m)")
             for t in times_slice
@@ -53,9 +53,9 @@ def fetch_hourly_forecast():
         df_hourly = pd.DataFrame(
             {
                 "Час": formatted_times,
-                "Температура (°C)": temps_slice,
                 "Очакван дъжд (мм)": precips_slice,
                 "Вероятност (%)": probs_slice,
+                "Температура (°C)": temps_slice,
             }
         )
 
@@ -66,10 +66,10 @@ def fetch_hourly_forecast():
     except:
         dummy_df = pd.DataFrame(
             {
-                "Час": [f"{i:02d}:00" for i in range(24)],
-                "Температура (°C)": [18] * 24,
+                "Час": [f"Час {i+1}" for i in range(24)],
                 "Очакван дъжд (мм)": [0.0] * 24,
                 "Вероятност (%)": [10] * 24,
+                "Температура (°C)": [18] * 24,
             }
         )
         return dummy_df, 4.2, 60
@@ -78,117 +78,106 @@ def fetch_hourly_forecast():
 df_hourly_forecast, api_rain_forecast, api_rain_prob = fetch_hourly_forecast()
 
 
-# Пълна мрежа от станции
+# 2. МРЕЖА ОТ СТАНЦИИ
 def get_station_network():
-    data = {
+    return {
         "Микулашев (Weathercloud)": {
-            "район": "Микулашев / Център",
-            "id": "d9323277135",
-            "тип": "Weathercloud (6м н.в.)",
-            "temp": 19.2,
-            "humidity": 78,
-            "rain_24h": 0.8,
+            "Район": "Микулашев / Център",
+            "Код": "d9323277135",
+            "Мрежа": "Weathercloud (6m н.в.)",
+            "Темп. (°C)": 19.2,
+            "Влажност (%)": 78,
+            "Дъжд 24ч (мм)": 0.8,
         },
         "IBANEV3": {
-            "район": "Микулашев / Център",
-            "id": "IBANEV3",
-            "тип": "Weather Underground",
-            "temp": 19.0,
-            "humidity": 80,
-            "rain_24h": 0.9,
+            "Район": "Микулашев / Център",
+            "Код": "IBANEV3",
+            "Мрежа": "Weather Underground",
+            "Темп. (°C)": 19.0,
+            "Влажност (%)": 80,
+            "Дъжд 24ч (мм)": 0.9,
         },
         "IBURGA13": {
-            "район": "Микулашев / Център",
-            "id": "IBURGA13",
-            "тип": "Weather Underground",
-            "temp": 19.4,
-            "humidity": 77,
-            "rain_24h": 0.7,
+            "Район": "Микулашев / Център",
+            "Код": "IBURGA13",
+            "Мрежа": "Weather Underground",
+            "Темп. (°C)": 19.4,
+            "Влажност (%)": 77,
+            "Дъжд 24ч (мм)": 0.7,
         },
         "Меден Рудник - Бл. 535 (VH)": {
-            "район": "Меден Рудник",
-            "id": "VH-535",
-            "тип": "Direct / VH (70м н.в.)",
-            "temp": 18.6,
-            "humidity": 86,
-            "rain_24h": 1.2,
+            "Район": "Меден Рудник",
+            "Код": "VH-535",
+            "Мрежа": "Direct / VH (70m н.в.)",
+            "Темп. (°C)": 18.6,
+            "Влажност (%)": 86,
+            "Дъжд 24ч (мм)": 1.2,
         },
         "IBURGA54": {
-            "район": "Меден Рудник",
-            "id": "IBURGA54",
-            "тип": "Weather Underground",
-            "temp": 18.5,
-            "humidity": 87,
-            "rain_24h": 1.3,
+            "Район": "Меден Рудник",
+            "Код": "IBURGA54",
+            "Мрежа": "Weather Underground",
+            "Темп. (°C)": 18.5,
+            "Влажност (%)": 87,
+            "Дъжд 24ч (мм)": 1.3,
         },
         "IBURGA90": {
-            "район": "Меден Рудник",
-            "id": "IBURGA90",
-            "тип": "Weather Underground",
-            "temp": 18.7,
-            "humidity": 85,
-            "rain_24h": 1.1,
+            "Район": "Меден Рудник",
+            "Код": "IBURGA90",
+            "Мрежа": "Weather Underground",
+            "Темп. (°C)": 18.7,
+            "Влажност (%)": 85,
+            "Дъжд 24ч (мм)": 1.1,
         },
         "IBURGA36": {
-            "район": "Меден Рудник",
-            "id": "IBURGA36",
-            "тип": "Weather Underground",
-            "temp": 18.3,
-            "humidity": 88,
-            "rain_24h": 1.4,
+            "Район": "Меден Рудник",
+            "Код": "IBURGA36",
+            "Мрежа": "Weather Underground",
+            "Темп. (°C)": 18.3,
+            "Влажност (%)": 88,
+            "Дъжд 24ч (мм)": 1.4,
         },
         "IBURGA110": {
-            "район": "Меден Рудник",
-            "id": "IBURGA110",
-            "тип": "Weather Underground",
-            "temp": 18.9,
-            "humidity": 83,
-            "rain_24h": 1.0,
+            "Район": "Меден Рудник",
+            "Код": "IBURGA110",
+            "Мрежа": "Weather Underground",
+            "Темп. (°C)": 18.9,
+            "Влажност (%)": 83,
+            "Дъжд 24ч (мм)": 1.0,
         },
     }
-    return data
 
 
 stations = get_station_network()
 
-# Секция 1: Сравнителна таблица на станциите
-st.header("📊 Сравнителна таблица на станциите в района")
-df = pd.DataFrame.from_dict(stations, orient="index")
-df.columns = [
-    "Район",
-    "ID / Код",
-    "Мрежа / Тип",
-    "Темп. (°C)",
-    "Влажност (%)",
-    "Дъжд 24ч (мм)",
-]
-st.dataframe(df, use_container_width=True)
-
-st.markdown("---")
-
-# Секция 2: Почасова таблица за следващите 24 часа (Ротационна от текущия час)
-st.header("⚠️ Почасова прогноза (Следващите 24 часа от сега)")
+# --- СЕКЦИЯ 1 (НАЙ-ОТГОРЕ): ПОЧАСОВА ПРОГНОЗА СЛЕДВАЩИТЕ 24 ЧАСА (ХРОНОЛОГИЧНО) ---
+st.header(
+    "⏱️ Почасова прогноза за валежи (От момента на отваряне ➔ Към края на 24ч)"
+)
 st.markdown(
-    "Таблицата и графиката показват прогнозата на живо **точно за следващите 24 часа** от текущия момент нататък."
+    "Данните в графиката и таблицата се движат **отляво надясно**, започвайки от точния час на отваряне на приложението."
 )
 
-st.dataframe(df_hourly_forecast, use_container_width=True)
-
-st.subheader("📈 Графика на очаквания дъжд по часове (мм)")
+# 1.1 Графика на валежите (Отляво надясно)
+st.subheader("📈 Графика на валежите по часове (мм)")
 chart_rain_df = df_hourly_forecast.set_index("Час")[["Очакван дъжд (мм)"]]
 st.bar_chart(chart_rain_df)
 
+# 1.2 Таблица по часове (Отгоре надолу хронологично)
+st.subheader("📋 Детайлна часова таблица")
+st.dataframe(df_hourly_forecast, use_container_width=True)
+
 st.markdown("---")
 
-# Секция 3: Обобщен анализ за денонощието напред
-st.header("📍 Обобщено количество за 24-часовия прозорец")
+# --- СЕКЦИЯ 2: ОБОБЩЕНИ ПРОГНОЗНИ КОЛИЧЕСТВА ЗА 24h ПЕРИОД ---
+st.header("📊 Очаквано общо количество за следващото денонощие")
 p_col1, p_col2 = st.columns(2)
 
 mr_forecast_rain = round(api_rain_forecast * 1.1, 1)
 
 with p_col1:
     st.metric(
-        "Очакван дъжд (Микулашев / Център)",
+        "Микулашев / Център (6m н.в.)",
         f"{api_rain_forecast} мм",
         f"Макс. вероятност: {api_rain_prob}%",
     )
@@ -196,8 +185,15 @@ with p_col1:
 
 with p_col2:
     st.metric(
-        "Очакван дъжд (Меден Рудник - Хълмиста част)",
+        "Меден Рудник (70m н.в.)",
         f"{mr_forecast_rain} мм",
         f"Макс. вероятност: {api_rain_prob}%",
     )
     st.progress(int(api_rain_prob))
+
+st.markdown("---")
+
+# --- СЕКЦИЯ 3 (НАЙ-ДОЛУ): СРАВНИТЕЛНА ТАБЛИЦА НА СТАНЦИИТЕ В РЕАЛНО ВРЕМЕ ---
+st.header("🌐 Станции в района (Живи данни за последните 24ч)")
+df_stations = pd.DataFrame.from_dict(stations, orient="index")
+st.dataframe(df_stations, use_container_width=True)
