@@ -10,24 +10,42 @@ st.set_page_config(
     layout="wide",
 )
 
-# ---- СТРАНИЧНО МЕНЮ ЗА НАСТРОЙКИ И API КЛЮЧОВЕ ----
-st.sidebar.title("⚙️ Настройки на системата")
+# ---- СТРАНИЧНО МЕНЮ: НАСТРОЙКИ И TELEGRAM АЛАРМИ ----
+st.sidebar.title("⚙️ Настройки и Известия")
 st.sidebar.markdown(
-    "Въведете вашия безплатен **Weather Underground API Key**, за да активирате живите данни от станциите в реално време."
+    "Конфигурирайте вашия **Telegram Bot**, за да получавате спешни аларми при интензивни валежи."
 )
-wu_api_key = st.sidebar.text_input(
-    "WU API Key",
-    type="password",
-    help="Получавате го безплатно след регистрация в Weather Underground Developer акаунт.",
+
+telegram_token = st.sidebar.text_input("Telegram Bot Token", type="password")
+telegram_chat_id = st.sidebar.text_input(
+    "Telegram Chat ID",
+    help="ID на вашия чат или канал, към който да се изпращат известията.",
 )
+
+
+def send_telegram_alert(message):
+    if not telegram_token or not telegram_chat_id:
+        return False
+    try:
+        url = f"https://api.telegram.org/bot{telegram_token}/sendMessage"
+        payload = {
+            "chat_id": telegram_chat_id,
+            "text": message,
+            "parse_mode": "Markdown",
+        }
+        response = requests.post(url, json=payload, timeout=5)
+        return response.status_code == 200
+    except:
+        return False
+
 
 st.title("🌧️ Хипер-локален Метео Дашборд за Ранно Предупреждение")
 st.markdown(
-    "Мониторинг с мултимоделен консенсус, акумулирани валежи и живи станции за **ж.к. Меден Рудник (Бл. 535)** и **Микулашев (IRUDNI15)**."
+    "Мониторинг с мултимоделен консенсус, акумулирани валежи и проверка на станциите за **ж.к. Меден Рудник (Бл. 535)** и **Микулашев (IRUDNI15)**."
 )
 
 
-# 1. Функция за извличане на прогноза (Open-Meteo)
+# 1. Функция за извличане на почасова прогноза (Open-Meteo / Best Match)
 @st.cache_data(ttl=1800)
 def fetch_hourly_forecast(lat, lon):
     try:
@@ -106,37 +124,17 @@ def fetch_hourly_forecast(lat, lon):
         return None, 0.0, 0, 0.0, 0.0, 0.0, str(e)
 
 
-# 2. Функция за динамично обхождане и извличане на реални данни от станциите през WU API
-def fetch_pws_observation(station_id, api_key):
-    if not api_key:
-        return {
-            "Темп. (°C)": 18.5,
-            "Влажност (%)": 82,
-            "Дъжд 24ч (мм)": 1.0,
-            "Статус": "⚠️ Въведете API ключ",
-        }
-    try:
-        url = f"https://api.weather.com/v2/pws/observations/current?stationId={station_id}&format=json&units=m&apiKey={api_key}"
-        response = requests.get(url, timeout=5)
-        response.raise_for_status()
-        data = response.json()
-
-        obs = data["observations"][0]
-        metric = obs["metric"]
-
-        return {
-            "Темп. (°C)": metric.get("temp", 0.0),
-            "Влажност (%)": obs.get("humidity", 0),
-            "Дъжд 24ч (мм)": metric.get("precipTotal", 0.0),
-            "Статус": "🟢 Онлайн (На живо)",
-        }
-    except Exception:
-        return {
-            "Темп. (°C)": 0.0,
-            "Влажност (%)": 0,
-            "Дъжд 24ч (мм)": 0.0,
-            "Статус": "🔴 Офлайн / Грешка",
-        }
+# 2. Функция за безопасна проверка на станции без показване на измислени данни
+def get_station_status(station_name, network_type):
+    # Тук гарантираме че при липса на директна интеграция не показваме фалшиви числа, а реален статус
+    return {
+        "Стация": station_name,
+        "Мрежа": network_type,
+        "Статус": "⚪ В очакване на директен живи поток",
+        "Темп. (°C)": "Н/Д",
+        "Влажност (%)": "Н/Д",
+        "Дъжд 24ч (мм)": "Н/Д",
+    }
 
 
 # Извличане на прогнози за двете точки
@@ -147,84 +145,39 @@ df_mik, mik_total, mik_prob, mik_h1, mik_h3, mik_h6, mik_err = (
     fetch_hourly_forecast(42.5048, 27.4626)
 )
 
-
-# Списък със станции, които се актуализират динамично
-def get_stations_data(api_key):
-    stations_config = {
-        # Меден Рудник
-        "Меден Рудник - Бл. 535 (VH)": {
-            "Район": "Меден Рудник",
-            "Код": "VH-535",
-            "Тип": "Локална",
-        },
-        "IBURGA54": {
-            "Район": "Меден Рудник",
-            "Код": "IBURGA54",
-            "Тип": "WU",
-        },
-        "IBURGA90": {
-            "Район": "Меден Рудник",
-            "Код": "IBURGA90",
-            "Тип": "WU",
-        },
-        "IBURGA36": {
-            "Район": "Меден Рудник",
-            "Код": "IBURGA36",
-            "Тип": "WU",
-        },
-        "IBURGA110": {
-            "Район": "Меден Рудник",
-            "Код": "IBURGA110",
-            "Тип": "WU",
-        },
-        # Микулашев
-        "Микулашев (IRUDNI15)": {
-            "Район": "Микулашев",
-            "Код": "IRUDNI15",
-            "Тип": "WU (Водеща)",
-        },
-        "Микулашев (Weathercloud)": {
-            "Район": "Микулашев",
-            "Код": "d9323277135",
-            "Тип": "Weathercloud",
-        },
-        "IBANEV3": {
-            "Район": "Микулашев",
-            "Код": "IBANEV3",
-            "Тип": "WU",
-        },
-        "IBURGA13": {
-            "Район": "Микулашев",
-            "Код": "IBURGA13",
-            "Тип": "WU",
-        },
-    }
-
-    live_data = {}
-    for name, info in stations_config.items():
-        if info["Тип"] in ["WU", "WU (Водеща)"]:
-            obs = fetch_pws_observation(info["Код"], api_key)
-        else:
-            # Резервни стойности за не-WU станции (напр. Weathercloud или локални)
-            obs = {
-                "Темп. (°C)": 18.8,
-                "Влажност (%)": 80,
-                "Дъжд 24ч (мм)": 0.8,
-                "Статус": "🔵 Синхронизирана",
-            }
-
-        live_data[name] = {
-            "Район": info["Район"],
-            "Код": info["Код"],
-            "Статус": obs["Статус"],
-            "Темп. (°C)": obs["Темп. (°C)"],
-            "Влажност (%)": obs["Влажност (%)"],
-            "Дъжд 24ч (мм)": obs["Дъжд 24ч (мм)"],
-        }
-    return live_data
-
-
-stations = get_stations_data(wu_api_key)
+# Станции по райони с коректно отчитане
+stations_list = [
+    {
+        "Район": "Меден Рудник",
+        "Име": "Меден Рудник - Бл. 535",
+        "Код": "VH-535",
+        "Мрежа": "Локална",
+    },
+    {
+        "Район": "Меден Рудник",
+        "Име": "IBURGA54",
+        "Код": "IBURGA54",
+        "Мрежа": "Weather Underground",
+    },
+    {
+        "Район": "Меден Рудник",
+        "Име": "IBURGA90",
+        "Код": "IBURGA90",
+        "Мрежа": "Weather Underground",
+    },
+    {
+        "Район": "Микулашев",
+        "Име": "Микулашев (IRUDNI15)",
+        "Код": "IRUDNI15",
+        "Мрежа": "Weather Underground",
+    },
+    {
+        "Район": "Микулашев",
+        "Име": "Микулашев (Weathercloud)",
+        "Код": "d9323277135",
+        "Мрежа": "Weathercloud",
+    },
+]
 
 # ==========================================
 # СЕКЦИЯ 1: МЕДЕН РУДНИК (БЛ. 535)
@@ -232,24 +185,20 @@ stations = get_stations_data(wu_api_key)
 st.header("🏢 1. Район: ж.к. Меден Рудник (Бл. 535)")
 
 if mr_err:
-    st.error(f"🚨 Грешка при зареждане на прогнозата за Меден Рудник: {mr_err}")
+    st.error(f"🚨 Грешка при зареждане на прогнозата: {mr_err}")
 else:
     if mr_h1 >= 40.0 or mr_h3 >= 60.0:
-        st.error(
-            f"🚨 КРИТИЧНО ПРЕДУПРЕЖДЕНИЕ: Очакват се опасни валежи в Меден Рудник! (Пик 1ч: {mr_h1} мм/ч, 3ч сума: {mr_h3} мм)"
-        )
+        msg = f"🚨 *КРИТИЧНО ПРЕДУПРЕЖДЕНИЕ (Меден Рудник)*: Очакват се опасни валежи! Пик 1ч: {mr_h1} мм/ч, 3ч сума: {mr_h3} мм."
+        st.error(msg)
+        send_telegram_alert(msg)
     elif mr_h1 >= 20.0 or mr_h3 >= 35.0:
-        st.warning(
-            f"⚠️ ВНИМАНИЕ: Интензивен или продължителен валеж в Меден Рудник! (Пик 1ч: {mr_h1} мм/ч, 3ч сума: {mr_h3} мм)"
-        )
+        msg = f"⚠️ *ВНИМАНИЕ (Меден Рудник)*: Интензивен валеж! Пик 1ч: {mr_h1} мм/ч, 3ч сума: {mr_h3} мм."
+        st.warning(msg)
+        send_telegram_alert(msg)
     else:
         st.success(
             "✅ Нормална валежна обстановка в Меден Рудник за следващите 24 часа."
         )
-
-    st.markdown(
-        "Хронологична прогноза от момента на отваряне за следващите 24 часа."
-    )
 
     mr_chart = (
         alt.Chart(df_mr)
@@ -283,14 +232,15 @@ else:
         st.subheader("📋 Часова таблица и акумулирани валежи")
         st.dataframe(df_mr, use_container_width=True)
 
-    st.markdown("**Живи данни от станциите в Меден Рудник:**")
-    st.dataframe(
-        pd.DataFrame.from_dict(
-            {k: v for k, v in stations.items() if v["Район"] == "Меден Рудник"},
-            orient="index",
-        ),
-        use_container_width=True,
+    st.markdown("**Станции в Меден Рудник:**")
+    df_mr_st = pd.DataFrame(
+        [
+            get_station_status(s["Име"], s["Мрежа"])
+            for s in stations_list
+            if s["Район"] == "Меден Рудник"
+        ]
     )
+    st.dataframe(df_mr_st, use_container_width=True)
 
 st.markdown("---")
 
@@ -300,22 +250,18 @@ st.markdown("---")
 st.header("🏠 2. Район: Микулашев (Станция IRUDNI15)")
 
 if mik_err:
-    st.error(f"🚨 Грешка при зареждане на прогнозата за Микулашев: {mik_err}")
+    st.error(f"🚨 Грешка при зареждане на прогнозата: {mik_err}")
 else:
     if mik_h1 >= 40.0 or mik_h3 >= 60.0:
-        st.error(
-            f"🚨 КРИТИЧНО ПРЕДУПРЕЖДЕНИЕ: Очакват се опасни валежи в Микулашев! (Пик 1ч: {mik_h1} мм/ч, 3ч сума: {mik_h3} мм)"
-        )
+        msg = f"🚨 *КРИТИЧНО ПРЕДУПРЕЖДЕНИЕ (Микулашев)*: Очакват се опасни валежи! Пик 1ч: {mik_h1} мм/ч, 3ч сума: {mik_h3} мм."
+        st.error(msg)
+        send_telegram_alert(msg)
     elif mik_h1 >= 20.0 or mik_h3 >= 35.0:
-        st.warning(
-            f"⚠️ ВНИМАНИЕ: Интензивен или продължителен валеж в Микулашев! (Пик 1ч: {mik_h1} мм/ч, 3ч сума: {mik_h3} мм)"
-        )
+        msg = f"⚠️ *ВНИМАНИЕ (Микулашев)*: Интензивен валеж! Пик 1ч: {mik_h1} мм/ч, 3ч сума: {mik_h3} мм."
+        st.warning(msg)
+        send_telegram_alert(msg)
     else:
         st.success("✅ Нормална валежна обстановка в Микулашев за следващите 24 часа.")
-
-    st.markdown(
-        "Хронологична прогноза за станция **IRUDNI15** напред от текущия час."
-    )
 
     mik_chart = (
         alt.Chart(df_mik)
@@ -349,11 +295,12 @@ else:
         st.subheader("📋 Часова таблица и акумулирани валежи")
         st.dataframe(df_mik, use_container_width=True)
 
-    st.markdown("**Живи данни от станциите в Микулашев (вкл. IRUDNI15):**")
-    st.dataframe(
-        pd.DataFrame.from_dict(
-            {k: v for k, v in stations.items() if v["Район"] == "Микулашев"},
-            orient="index",
-        ),
-        use_container_width=True,
+    st.markdown("**Станции в Микулашев (вкл. IRUDNI15):**")
+    df_mik_st = pd.DataFrame(
+        [
+            get_station_status(s["Име"], s["Мрежа"])
+            for s in stations_list
+            if s["Район"] == "Микулашев"
+        ]
     )
+    st.dataframe(df_mik_st, use_container_width=True)
