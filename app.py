@@ -16,12 +16,12 @@ st.markdown(
 )
 
 
-# Функция за извличане на динамична почасова прогноза по координати с микроклиматични особености
+# Динамична функция за извличане на почасова прогноза по точни координати
 @st.cache_data(ttl=1800)
-def fetch_hourly_forecast(location_type):
+def fetch_hourly_forecast(lat, lon, location_name):
     try:
-        url = "https://api.open-meteo.com/v1/forecast?latitude=42.5048&longitude=27.4626&hourly=temperature_2m,precipitation_probability,precipitation&timezone=Europe/Sofia"
-        response = requests.get(url)
+        url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&hourly=temperature_2m,precipitation_probability,precipitation&timezone=Europe/Sofia"
+        response = requests.get(url, timeout=10)
         data = response.json()
 
         hourly_data = data["hourly"]
@@ -44,19 +44,12 @@ def fetch_hourly_forecast(location_type):
         precips_slice = list(precips[start_idx:end_idx])
         probs_slice = list(probs[start_idx:end_idx])
 
-        # Микроклиматични корекции спрямо релефа между двете точки
-        if location_type == "medan_rudnik":
-            # Хълмиста част (Бл. 535, ~70м н.в.)
+        # Микроклиматичен градиент за височината на Меден Рудник (70м н.в. vs 6м н.в.)
+        if location_name == "medan_rudnik":
             temps_slice = [round(t - 0.4, 1) for t in temps_slice]
             precips_slice = [
-                round(p * 1.15 if p > 0 else 0.0, 2) for p in precips_slice
+                round(p * 1.1 if p > 0 else 0.0, 2) for p in precips_slice
             ]
-            probs_slice = [min(100, int(pr * 1.1)) for pr in probs_slice]
-        else:
-            # Ниска част / Микулашев (IRUDNI15)
-            temps_slice = [round(t, 1) for t in temps_slice]
-            precips_slice = [round(p, 2) for p in precips_slice]
-            probs_slice = [int(pr) for pr in probs_slice]
 
         hours_labels = []
         for t in times_slice:
@@ -77,31 +70,33 @@ def fetch_hourly_forecast(location_type):
         max_hourly_rain = max(precips_slice) if precips_slice else 0.0
 
         return df_hourly, round(total_rain, 1), max_prob, max_hourly_rain
-    except:
+    except Exception as e:
         dummy_df = pd.DataFrame(
             {
                 "Час": [f"Час {i+1}" for i in range(24)],
                 "Очакван дъжд (мм)": [0.0] * 24,
                 "Вероятност (%)": [10] * 24,
-                "Температура (°C)": [18] * 24,
+                "Температура (°C)": [18.0] * 24,
             }
         )
-        return dummy_df, 4.0, 50, 0.0
+        return dummy_df, 0.0, 10, 0.0
 
 
-# Генериране на прогнози за двете точки
+# 1. Заявка за Меден Рудник (Бл. 535) -> lat=42.4785, lon=27.4345
 df_mr_forecast, mr_rain_total, mr_max_prob, mr_max_hourly = (
-    fetch_hourly_forecast("medan_rudnik")
+    fetch_hourly_forecast(42.4785, 27.4345, "medan_rudnik")
 )
+
+# 2. Заявка за Микулашев (IRUDNI15) -> lat=42.5048, lon=27.4626
 df_mik_forecast, mik_rain_total, mik_max_prob, mik_max_hourly = (
-    fetch_hourly_forecast("mikulashev")
+    fetch_hourly_forecast(42.5048, 27.4626, "mikulashev")
 )
 
 
-# Пълна мрежа от станции (с коректно позициониране на IRUDNI15)
+# База със станции
 def get_stations():
     return {
-        # РАЙОН 1: МЕДЕН РУДНИК (Първи)
+        # РАЙОН 1: МЕДЕН РУДНИК
         "Меден Рудник - Бл. 535 (VH)": {
             "Район": "Меден Рудник",
             "Код": "VH-535",
@@ -142,7 +137,7 @@ def get_stations():
             "Влажност (%)": 83,
             "Дъжд 24ч (мм)": 1.0,
         },
-        # РАЙОН 2: МИКУЛАСЕВ (С водеща станция IRUDNI15)
+        # РАЙОН 2: МИКУЛАСЕВ (с IRUDNI15)
         "Микулашев (IRUDNI15)": {
             "Район": "Микулашев",
             "Код": "IRUDNI15",
@@ -181,7 +176,7 @@ def get_stations():
 stations = get_stations()
 
 # ==========================================
-# СЕКЦИЯ 1: МЕДЕН РУДНИК (БЛ. 535 / ТЕРМИНАЛ)
+# СЕКЦИЯ 1: МЕДЕН РУДНИК (БЛ. 535)
 # ==========================================
 st.header("🏢 1. Район: ж.к. Меден Рудник (Бл. 535)")
 
