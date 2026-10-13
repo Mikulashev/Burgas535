@@ -15,7 +15,7 @@ st.markdown(
 )
 
 
-# 1. ИЗВЛИЧАНЕ НА ПОЧАСОВА ПРОГНОЗА (От текущия час -> +24 часа хронологично)
+# 1. ИЗВЛИЧАНЕ НА ПОЧАСОВА ПРОГНОЗА (От текущия час -> +24 часа)
 @st.cache_data(ttl=1800)
 def fetch_hourly_forecast():
     try:
@@ -44,17 +44,15 @@ def fetch_hourly_forecast():
         precips_slice = precips[start_idx:end_idx]
         probs_slice = probs[start_idx:end_idx]
 
-        # Създаваме чисти етикети и запазваме оригиналната последователност чрез списък от обекти или числов индекс
         hours_labels = []
-        datetime_objects = []
         for t in times_slice:
             dt = datetime.datetime.fromisoformat(t)
-            datetime_objects.append(dt)
             hours_labels.append(dt.strftime("%H:00 (%d.%m)"))
 
+        # Създаваме числов индекс от 0 до 23, за да гарантираме перфектен ред в графиката отляво надясно
         df_hourly = pd.DataFrame(
             {
-                "Хронологичен ред": datetime_objects,
+                "Хронологичен ред": range(len(times_slice)),
                 "Час": hours_labels,
                 "Очакван дъжд (мм)": precips_slice,
                 "Вероятност (%)": probs_slice,
@@ -67,11 +65,10 @@ def fetch_hourly_forecast():
 
         return df_hourly, round(total_rain, 1), max_prob
     except:
-        dummy_dt = [datetime.datetime.now() + datetime.timedelta(hours=i) for i in range(24)]
         dummy_df = pd.DataFrame(
             {
-                "Хронологичен ред": dummy_dt,
-                "Час": [dt.strftime("%H:00") for dt in dummy_dt],
+                "Хронологичен ред": range(24),
+                "Час": [f"Час {i+1}" for i in range(24)],
                 "Очакван дъжд (мм)": [0.0] * 24,
                 "Вероятност (%)": [10] * 24,
                 "Температура (°C)": [18] * 24,
@@ -158,19 +155,17 @@ stations = get_station_network()
 # --- СЕКЦИЯ 1 (НАЙ-ОТГОРЕ): ПОЧАСОВА ПРОГНОЗА СЛЕДВАЩИТЕ 24 ЧАСА ---
 st.header("⏱️ Почасова прогноза за валежи (От момента на отваряне ➔ Напред)")
 st.markdown(
-    "Графиката и таблицата следват строг хронологичен ред **отляво надясно** (от текущия час към следващите 24 часа)."
+    "Графиката подрежда часовете строго последователно **отляво (сега) надясно (към края на периода)**."
 )
 
-# Подготвяме датафрейма за графиката така, че индексът да е реалният хронологичен ред
+# Подготвяме числовия индекс за графиката, за да застане в правилен ред
 chart_df = df_hourly_forecast.set_index("Хронологичен ред")[["Очакван дъжд (мм)"]]
-# Преименуваме индекса визуално към стринговия час за показване на графиката
-chart_df.index = df_hourly_forecast["Час"]
+chart_df.index = df_hourly_forecast["Час"]  # Етикетите по оста X
 
 st.subheader("📈 Графика на валежите по часове (мм)")
 st.bar_chart(chart_df)
 
 st.subheader("📋 Детайлна часова таблица")
-# Показваме таблицата без помощната колона за сортиране, за да е чиста и подредена
 display_table = df_hourly_forecast[["Час", "Очакван дъжд (мм)", "Вероятност (%)", "Температура (°C)"]]
 st.dataframe(display_table, use_container_width=True)
 
