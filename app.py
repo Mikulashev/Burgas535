@@ -60,8 +60,9 @@ def fetch_hourly_forecast(lat, lon):
 
         total_rain = sum(precips_slice)
         max_prob = max(probs_slice) if probs_slice else 0
+        max_hourly_rain = max(precips_slice) if precips_slice else 0.0
 
-        return df_hourly, round(total_rain, 1), max_prob
+        return df_hourly, round(total_rain, 1), max_prob, max_hourly_rain
     except:
         dummy_df = pd.DataFrame(
             {
@@ -71,17 +72,17 @@ def fetch_hourly_forecast(lat, lon):
                 "Температура (°C)": [18] * 24,
             }
         )
-        return dummy_df, 4.0, 50
+        return dummy_df, 4.0, 50, 0.0
 
 
 # 1. ПРОГНОЗА ЗА МЕДЕН РУДНИК (Бл. 535 / Терминал) - Координати: 42.4785, 27.4345
-df_mr_forecast, mr_rain_total, mr_max_prob = fetch_hourly_forecast(
-    42.4785, 27.4345
+df_mr_forecast, mr_rain_total, mr_max_prob, mr_max_hourly = (
+    fetch_hourly_forecast(42.4785, 27.4345)
 )
 
 # 2. ПРОГНОЗА ЗА МИКУЛАСЕВ / ЦЕНТЪР - Координати: 42.5048, 27.4626
-df_mik_forecast, mik_rain_total, mik_max_prob = fetch_hourly_forecast(
-    42.5048, 27.4626
+df_mik_forecast, mik_rain_total, mik_max_prob, mik_max_hourly = (
+    fetch_hourly_forecast(42.5048, 27.4626)
 )
 
 
@@ -163,6 +164,21 @@ stations = get_stations()
 # СЕКЦИЯ 1: МЕДЕН РУДНИК (БЛ. 535 / ТЕРМИНАЛ)
 # ==========================================
 st.header("🏢 1. Район: ж.к. Меден Рудник (Бл. 535 / Терминал)")
+
+# Проверка за аларма (Червено > 40 мм/ч, Жълто > 20 мм/ч)
+if mr_max_hourly >= 40.0:
+    st.error(
+        f"🚨 КРИТИЧНО ПРЕДУПРЕЖДЕНИЕ: Очаква се екстремен валеж от {mr_max_hourly} мм/ч в района на Меден Рудник! Висок риск от наводнения!"
+    )
+elif mr_max_hourly >= 20.0:
+    st.warning(
+        f"⚠️ ВНИМАНИЕ: Интензивен валеж от {mr_max_hourly} мм/ч в района на Меден Рудник! Повишен риск от задържане на вода."
+    )
+else:
+    st.success(
+        "✅ Няма опасност от интензивни валежи над 20 мм/ч за следващите 24 часа."
+    )
+
 st.markdown("Хронологична прогноза от момента на отваряне за следващите 24 часа.")
 
 mr_chart = (
@@ -193,7 +209,6 @@ with mr_col2:
     st.subheader("📋 Часова таблица (Меден Рудник)")
     st.dataframe(df_mr_forecast, use_container_width=True)
 
-# Таблица със станциите за Меден Рудник
 st.markdown("**Станции в Меден Рудник:**")
 df_mr_stations = pd.DataFrame.from_dict(
     {k: v for k, v in stations.items() if v["Район"] == "Меден Рудник"},
@@ -207,6 +222,21 @@ st.markdown("---")
 # СЕКЦИЯ 2: МИКУЛАСЕВ / ЦЕНТЪР
 # ==========================================
 st.header("🏠 2. Район: Микулашев / Център")
+
+# Проверка за аларма (Червено > 40 мм/ч, Жълто > 20 мм/ч)
+if mik_max_hourly >= 40.0:
+    st.error(
+        f"🚨 КРИТИЧНО ПРЕДУПРЕЖДЕНИЕ: Очаква се екстремен валеж от {mik_max_hourly} мм/ч в района на Микулашев! Висок риск от наводнения!"
+    )
+elif mik_max_hourly >= 20.0:
+    st.warning(
+        f"⚠️ ВНИМАНИЕ: Интензивен валеж от {mik_max_hourly} мм/ч в района на Микулашев! Повишен риск от задържане на вода."
+    )
+else:
+    st.success(
+        "✅ Няма опасност от интензивни валежи над 20 мм/ч за следващите 24 часа."
+    )
+
 st.markdown("Хронологична прогноза от момента на отваряне за следващите 24 часа.")
 
 mik_chart = (
@@ -237,7 +267,6 @@ with mik_col2:
     st.subheader("📋 Часова таблица (Микулашев)")
     st.dataframe(df_mik_forecast, use_container_width=True)
 
-# Таблица със станциите за Микулашев
 st.markdown("**Станции в Микулашев / Център:**")
 df_mik_stations = pd.DataFrame.from_dict(
     {k: v for k, v in stations.items() if v["Район"] == "Микулашев / Център"},
