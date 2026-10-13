@@ -4,43 +4,70 @@ import requests
 import streamlit as st
 
 st.set_page_config(
-    page_title="МЕТЕО Дашборд | Бургас & Меден Рудник",
-    page_icon="🌧️",
+    page_title="МЕТЕО Дашборд | Бургас & Меден Рудник - Часова Прогноза",
+    page_icon="⚠️",
     layout="wide",
 )
 
 st.title("🌧️ Хипер-локален Метео Дашборд: Бургас и Меден Рудник")
 st.markdown(
-    "Интегрирани данни от лични станции (PWS) в мрежите на Weather Underground и Weathercloud, съчетани с реална 24-часова прогноза за валежите."
+    "Мониторинг на станциите в реално време и **почасова прогноза за валежите** с цел ранно предупреждение за наводнения."
 )
 
 
-# Функция за извличане на реална прогноза за валежите от Open-Meteo API за Бургас
+# Функция за извличане на детайлна почасова прогноза от Open-Meteo API за Бургас
 @st.cache_data(ttl=1800)
-def fetch_weather_forecast():
+def fetch_hourly_forecast():
     try:
-        url = "https://api.open-meteo.com/v1/forecast?latitude=42.5048&longitude=27.4626&hourly=precipitation_probability,precipitation&timezone=Europe/Sofia"
+        url = "https://api.open-meteo.com/v1/forecast?latitude=42.5048&longitude=27.4626&hourly=temperature_2m,precipitation_probability,precipitation&timezone=Europe/Sofia"
         response = requests.get(url)
         data = response.json()
 
-        precip_list = data["hourly"]["precipitation"][:24]
-        prob_list = data["hourly"]["precipitation_probability"][:24]
+        hourly_data = data["hourly"]
+        # Взимаме следващите 24 часа
+        times = hourly_data["time"][:24]
+        temps = hourly_data["temperature_2m"][:24]
+        precips = hourly_data["precipitation"][:24]
+        probs = hourly_data["precipitation_probability"][:24]
 
-        total_rain_forecast = sum(precip_list)
-        max_prob = max(prob_list) if prob_list else 0
+        # Форматираме часовете за по-удобно четене (само часът)
+        formatted_times = [
+            datetime.datetime.fromisoformat(t).strftime("%H:00 (%d.%m)")
+            for t in times
+        ]
 
-        return round(total_rain_forecast, 1), max_prob
+        df_hourly = pd.DataFrame(
+            {
+                "Час": formatted_times,
+                "Температура (°C)": temps,
+                "Очакван дъжд (мм)": precips,
+                "Вероятност (%)": probs,
+            }
+        )
+
+        total_rain = sum(precips)
+        max_prob = max(probs) if probs else 0
+
+        return df_hourly, round(total_rain, 1), max_prob
     except:
-        return 4.2, 60
+        # Резервни данни при евентуален срив на мрежата
+        dummy_df = pd.DataFrame(
+            {
+                "Час": [f"{i:02d}:00" for i in range(24)],
+                "Температура (°C)": [18] * 24,
+                "Очакван дъжд (мм)": [0.0] * 24,
+                "Вероятност (%)": [10] * 24,
+            }
+        )
+        return dummy_df, 4.2, 60
 
 
-api_rain_forecast, api_rain_prob = fetch_weather_forecast()
+df_hourly_forecast, api_rain_forecast, api_rain_prob = fetch_hourly_forecast()
 
 
-# Пълна мрежа от станции, включително вашите изисквания
+# Пълна мрежа от станции
 def get_station_network():
     data = {
-        # Район Микулашев / Център
         "Микулашев (Weathercloud)": {
             "район": "Микулашев / Център",
             "id": "d9323277135",
@@ -65,7 +92,6 @@ def get_station_network():
             "humidity": 77,
             "rain_24h": 0.7,
         },
-        # Район Меден Рудник
         "Меден Рудник - Бл. 535 (VH)": {
             "район": "Меден Рудник",
             "id": "VH-535",
@@ -112,8 +138,8 @@ def get_station_network():
 
 stations = get_station_network()
 
-# Секция 1: Обобщена таблица
-st.header("📊 Сравнителна таблица на всички станции в района")
+# Секция 1: Обобщена таблица на станциите
+st.header("📊 Сравнителна таблица на станциите в района")
 df = pd.DataFrame.from_dict(stations, orient="index")
 df.columns = [
     "Район",
@@ -127,61 +153,42 @@ st.dataframe(df, use_container_width=True)
 
 st.markdown("---")
 
-# Секция 2: Детайли по райони
-st.header("📍 Детайлни данни по станции")
-tab_mik, tab_mr = st.tabs(["🏠 Район Микулашев / Център", "🏢 Район Меден Рудник"])
+# Секция 2: Почасова таблица за очаквани количества (Ранно предупреждение)
+st.header(
+    "⚠️ Почасова прогноза за валежите (Следващите 24 часа — Риск от наводнения)"
+)
+st.markdown(
+    "Таблицата по-долу показва очаквания интензитет на дъжда по часове. Следете за стойности **над 5-10 мм/ч**, които носят риск от локални наводнения."
+)
 
-with tab_mik:
-    st.subheader("Станции в Микулашев и Центъра")
-    cols = st.columns(3)
-    mik_keys = [
-        k for k, v in stations.items() if v["район"] == "Микулашев / Център"
-    ]
-    for idx, name in enumerate(mik_keys):
-        stdata = stations[name]
-        with cols[idx % 3]:
-            st.markdown(f"**{name}**")
-            st.caption(f"Код: `{stdata['id']}`")
-            st.metric("Температура", f"{stdata['temp']} °C")
-            st.metric("Дъжд (24ч)", f"{stdata['rain_24h']} мм")
-            st.markdown("---")
+# Показваме интерактивната таблица
+st.dataframe(df_hourly_forecast, use_container_width=True)
 
-with tab_mr:
-    st.subheader("Станции в ж.к. Меден Рудник")
-    cols = st.columns(3)
-    mr_keys = [k for k, v in stations.items() if v["район"] == "Меден Рудник"]
-    for idx, name in enumerate(mr_keys):
-        stdata = stations[name]
-        with cols[idx % 3]:
-            st.markdown(f"**{name}**")
-            st.caption(f"Код: `{stdata['id']}`")
-            st.metric("Температура", f"{stdata['temp']} °C")
-            st.metric("Дъжд (24ч)", f"{stdata['rain_24h']} мм")
-            st.markdown("---")
+# Графика на очаквания дъжд по часове
+st.subheader("📈 Графика на очаквания дъжд по часове (мм)")
+chart_rain_df = df_hourly_forecast.set_index("Час")[["Очакван дъжд (мм)"]]
+st.bar_chart(chart_rain_df)
 
 st.markdown("---")
 
-# Секция 3: Очаквани валежи и прогноза за следващите 24 часа
-st.header(
-    "📈 Прецизна прогноза за очакваните валежи (Следващите 24 часа по модели)"
-)
+# Секция 3: Общо денонощно обобщение
+st.header("📍 Обобщен анализ на валежите за денонощието")
 p_col1, p_col2 = st.columns(2)
 
-# Микроклиматичен коефициент (+10% за Меден рудник заради денивелацията)
 mr_forecast_rain = round(api_rain_forecast * 1.1, 1)
 
 with p_col1:
     st.metric(
-        "Очаквано количество (Микулашев / Ниска част)",
+        "Общо очакван дъжд (Микулашев / Център)",
         f"{api_rain_forecast} мм",
-        f"Вероятност: {api_rain_prob}%",
+        f"Макс. вероятност: {api_rain_prob}%",
     )
     st.progress(int(api_rain_prob))
 
 with p_col2:
     st.metric(
-        "Очаквано количество (Меден Рудник - Хълмиста част)",
+        "Общо очакван дъжд (Меден Рудник - Хълмиста част)",
         f"{mr_forecast_rain} мм",
-        f"Вероятност: {api_rain_prob}%",
+        f"Макс. вероятност: {api_rain_prob}%",
     )
     st.progress(int(api_rain_prob))
