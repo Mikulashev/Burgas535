@@ -11,11 +11,11 @@ st.set_page_config(
 
 st.title("🌧️ Хипер-локален Метео Дашборд: Бургас и Меден Рудник")
 st.markdown(
-    "Мониторинг на станциите в реално време и **почасова прогноза за валежите** с цел ранно предупреждение за наводнения."
+    "Мониторинг на станциите в реално време и **динамична 24-часова прогноза** (напред от текущия час)."
 )
 
 
-# Функция за извличане на детайлна почасова прогноза от Open-Meteo API за Бургас
+# Функция за извличане на динамична почасова прогноза за следващите 24 часа от текущия час
 @st.cache_data(ttl=1800)
 def fetch_hourly_forecast():
     try:
@@ -24,33 +24,46 @@ def fetch_hourly_forecast():
         data = response.json()
 
         hourly_data = data["hourly"]
-        # Взимаме следващите 24 часа
-        times = hourly_data["time"][:24]
-        temps = hourly_data["temperature_2m"][:24]
-        precips = hourly_data["precipitation"][:24]
-        probs = hourly_data["precipitation_probability"][:24]
+        times = hourly_data["time"]
+        temps = hourly_data["temperature_2m"]
+        precips = hourly_data["precipitation"]
+        probs = hourly_data["precipitation_probability"]
 
-        # Форматираме часовете за по-удобно четене (само часът)
+        # Намираме текущия момент, за да започнем прогнозата от актуалния час напред
+        now = datetime.datetime.now()
+        start_idx = 0
+        for i, t_str in enumerate(times):
+          t_dt = datetime.datetime.fromisoformat(t_str)
+          if t_dt >= now:
+            start_idx = i
+            break
+
+        # Взимаме точно 24 часа напред от текущия час
+        end_idx = start_idx + 24
+        times_slice = times[start_idx:end_idx]
+        temps_slice = temps[start_idx:end_idx]
+        precips_slice = precips[start_idx:end_idx]
+        probs_slice = probs[start_idx:end_idx]
+
         formatted_times = [
             datetime.datetime.fromisoformat(t).strftime("%H:00 (%d.%m)")
-            for t in times
+            for t in times_slice
         ]
 
         df_hourly = pd.DataFrame(
             {
                 "Час": formatted_times,
-                "Температура (°C)": temps,
-                "Очакван дъжд (мм)": precips,
-                "Вероятност (%)": probs,
+                "Температура (°C)": temps_slice,
+                "Очакван дъжд (мм)": precips_slice,
+                "Вероятност (%)": probs_slice,
             }
         )
 
-        total_rain = sum(precips)
-        max_prob = max(probs) if probs else 0
+        total_rain = sum(precips_slice)
+        max_prob = max(probs_slice) if probs_slice else 0
 
         return df_hourly, round(total_rain, 1), max_prob
     except:
-        # Резервни данни при евентуален срив на мрежата
         dummy_df = pd.DataFrame(
             {
                 "Час": [f"{i:02d}:00" for i in range(24)],
@@ -138,7 +151,7 @@ def get_station_network():
 
 stations = get_station_network()
 
-# Секция 1: Обобщена таблица на станциите
+# Секция 1: Сравнителна таблица на станциите
 st.header("📊 Сравнителна таблица на станциите в района")
 df = pd.DataFrame.from_dict(stations, orient="index")
 df.columns = [
@@ -153,33 +166,29 @@ st.dataframe(df, use_container_width=True)
 
 st.markdown("---")
 
-# Секция 2: Почасова таблица за очаквани количества (Ранно предупреждение)
-st.header(
-    "⚠️ Почасова прогноза за валежите (Следващите 24 часа — Риск от наводнения)"
-)
+# Секция 2: Почасова таблица за следващите 24 часа (Ротационна от текущия час)
+st.header("⚠️ Почасова прогноза (Следващите 24 часа от сега)")
 st.markdown(
-    "Таблицата по-долу показва очаквания интензитет на дъжда по часове. Следете за стойности **над 5-10 мм/ч**, които носят риск от локални наводнения."
+    "Таблицата и графиката показват прогнозата на живо **точно за следващите 24 часа** от текущия момент нататък."
 )
 
-# Показваме интерактивната таблица
 st.dataframe(df_hourly_forecast, use_container_width=True)
 
-# Графика на очаквания дъжд по часове
 st.subheader("📈 Графика на очаквания дъжд по часове (мм)")
 chart_rain_df = df_hourly_forecast.set_index("Час")[["Очакван дъжд (мм)"]]
 st.bar_chart(chart_rain_df)
 
 st.markdown("---")
 
-# Секция 3: Общо денонощно обобщение
-st.header("📍 Обобщен анализ на валежите за денонощието")
+# Секция 3: Обобщен анализ за денонощието напред
+st.header("📍 Обобщено количество за 24-часовия прозорец")
 p_col1, p_col2 = st.columns(2)
 
 mr_forecast_rain = round(api_rain_forecast * 1.1, 1)
 
 with p_col1:
     st.metric(
-        "Общо очакван дъжд (Микулашев / Център)",
+        "Очакван дъжд (Микулашев / Център)",
         f"{api_rain_forecast} мм",
         f"Макс. вероятност: {api_rain_prob}%",
     )
@@ -187,7 +196,7 @@ with p_col1:
 
 with p_col2:
     st.metric(
-        "Общо очакван дъжд (Меден Рудник - Хълмиста част)",
+        "Очакван дъжд (Меден Рудник - Хълмиста част)",
         f"{mr_forecast_rain} мм",
         f"Макс. вероятност: {api_rain_prob}%",
     )
