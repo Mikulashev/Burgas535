@@ -1,4 +1,5 @@
 import datetime
+import altair as alt
 import pandas as pd
 import requests
 import streamlit as st
@@ -49,10 +50,8 @@ def fetch_hourly_forecast():
             dt = datetime.datetime.fromisoformat(t)
             hours_labels.append(dt.strftime("%H:00 (%d.%m)"))
 
-        # Създаваме числов индекс от 0 до 23, за да гарантираме перфектен ред в графиката отляво надясно
         df_hourly = pd.DataFrame(
             {
-                "Хронологичен ред": range(len(times_slice)),
                 "Час": hours_labels,
                 "Очакван дъжд (мм)": precips_slice,
                 "Вероятност (%)": probs_slice,
@@ -67,7 +66,6 @@ def fetch_hourly_forecast():
     except:
         dummy_df = pd.DataFrame(
             {
-                "Хронологичен ред": range(24),
                 "Час": [f"Час {i+1}" for i in range(24)],
                 "Очакван дъжд (мм)": [0.0] * 24,
                 "Вероятност (%)": [10] * 24,
@@ -152,22 +150,32 @@ def get_station_network():
 
 stations = get_station_network()
 
-# --- СЕКЦИЯ 1 (НАЙ-ОТГОРЕ): ПОЧАСОВА ПРОГНОЗА СЛЕДВАЩИТЕ 24 ЧАСА ---
+# --- СЕКЦИЯ 1: ПОЧАСОВА ПРОГНОЗА СЛЕДВАЩИТЕ 24 ЧАСА ---
 st.header("⏱️ Почасова прогноза за валежи (От момента на отваряне ➔ Напред)")
 st.markdown(
-    "Графиката подрежда часовете строго последователно **отляво (сега) надясно (към края на периода)**."
+    "Графиката е строго защитена срещу разместване и следва хронологията отляво (сега) надясно (към бъдещето)."
 )
 
-# Подготвяме числовия индекс за графиката, за да застане в правилен ред
-chart_df = df_hourly_forecast.set_index("Хронологичен ред")[["Очакван дъжд (мм)"]]
-chart_df.index = df_hourly_forecast["Час"]  # Етикетите по оста X
+# Използваме Altair Chart с изрично зададен ред на масива (sort=None), за да няма никакво разместване
+chart = (
+    alt.Chart(df_hourly_forecast)
+    .mark_bar()
+    .encode(
+        x=alt.X(
+            "Час:N",
+            sort=list(df_hourly_forecast["Час"]),
+            title="Час (Хронологично)",
+        ),
+        y=alt.Y("Очакван дъжд (мм):Q", title="Очакван дъжд (мм)"),
+        tooltip=["Час", "Очакван дъжд (мм)", "Вероятност (%)", "Температура (°C)"],
+    )
+    .interactive()
+)
 
-st.subheader("📈 Графика на валежите по часове (мм)")
-st.bar_chart(chart_df)
+st.altair_chart(chart, use_container_width=True)
 
 st.subheader("📋 Детайлна часова таблица")
-display_table = df_hourly_forecast[["Час", "Очакван дъжд (мм)", "Вероятност (%)", "Температура (°C)"]]
-st.dataframe(display_table, use_container_width=True)
+st.dataframe(df_hourly_forecast, use_container_width=True)
 
 st.markdown("---")
 
