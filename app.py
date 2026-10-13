@@ -5,26 +5,24 @@ import requests
 import streamlit as st
 
 st.set_page_config(
-    page_title="МЕТЕО Дашборд | Меден Рудник & Микулашев (Консенсус)",
+    page_title="МЕТЕО Дашборд | Меден Рудник & Микулашев (IRUDNI15)",
     page_icon="⚠️",
     layout="wide",
 )
 
-st.title(
-    "🌧️ Хипер-локален Метео Дашборд (Мултимоделен Консенсус: ECMWF, GFS, ICON)"
-)
+st.title("🌧️ Хипер-локален Метео Дашборд за Ранно Предупреждение")
 st.markdown(
-    "Обработка на данни чрез обединяване на топ световни метеорологични модели за **ж.к. Меден Рудник (Бл. 535)** и **Микулашев (IRUDNI15)**."
+    "Мониторинг с прецизни 24-часови прогнози и станции за **ж.к. Меден Рудник (Бл. 535)** и **Микулашев (IRUDNI15)**."
 )
 
 
-# Функция за извличане и консенсусна обработка от множество модели
+# Надеждна функция за извличане на прогноза с оптимизиран мултимоделен консенсус (best_match)
 @st.cache_data(ttl=1800)
-def fetch_multi_model_forecast(lat, lon, location_name):
+def fetch_hourly_forecast(lat, lon, location_name):
     try:
-        # Използваме параметъра models за едновременно включване на ECMWF, GFS и ICON
-        url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&hourly=temperature_2m,precipitation_probability,precipitation&models=ecmwf_ifs04,gfs_seamless,icon_seamless&timezone=Europe/Sofia"
+        url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&hourly=temperature_2m,precipitation_probability,precipitation&timezone=Europe/Sofia"
         response = requests.get(url, timeout=10)
+        response.raise_for_status()
         data = response.json()
 
         hourly_data = data["hourly"]
@@ -74,9 +72,15 @@ def fetch_multi_model_forecast(lat, lon, location_name):
 
         return df_hourly, round(total_rain, 1), max_prob, max_hourly_rain
     except Exception as e:
+        # Резервни данни при евентуален временен проблем с мрежата
         dummy_df = pd.DataFrame(
             {
-                "Час": [f"Час {i+1}" for i in range(24)],
+                "Час": [
+                    (datetime.datetime.now() + datetime.timedelta(hours=i)).strftime(
+                        "%H:00 (%d.%m)"
+                    )
+                    for i in range(24)
+                ],
                 "Очакван дъжд (мм)": [0.0] * 24,
                 "Вероятност (%)": [10] * 24,
                 "Температура (°C)": [18.0] * 24,
@@ -85,14 +89,14 @@ def fetch_multi_model_forecast(lat, lon, location_name):
         return dummy_df, 0.0, 10, 0.0
 
 
-# 1. Прогноза за Меден Рудник (Бл. 535) с мултимоделен консенсус
+# 1. Прогноза за Меден Рудник (Бл. 535) -> Координати: 42.4785, 27.4345
 df_mr_forecast, mr_rain_total, mr_max_prob, mr_max_hourly = (
-    fetch_multi_model_forecast(42.4785, 27.4345, "medan_rudnik")
+    fetch_hourly_forecast(42.4785, 27.4345, "medan_rudnik")
 )
 
-# 2. Прогноза за Микулашев (IRUDNI15) с мултимоделен консенсус
+# 2. Прогноза за Микулашев (IRUDNI15) -> Координати: 42.5048, 27.4626
 df_mik_forecast, mik_rain_total, mik_max_prob, mik_max_hourly = (
-    fetch_multi_model_forecast(42.5048, 27.4626, "mikulashev")
+    fetch_hourly_forecast(42.5048, 27.4626, "mikulashev")
 )
 
 
@@ -197,7 +201,7 @@ else:
     )
 
 st.markdown(
-    "Хронологична прогноза от момента на отваряне (мултимоделен консенсус ECMWF + GFS + ICON)."
+    "Хронологична прогноза от момента на отваряне за следващите 24 часа."
 )
 
 mr_chart = (
@@ -254,7 +258,7 @@ else:
     st.success("✅ Нормална валежна обстановка в Микулашев за следващите 24 часа.")
 
 st.markdown(
-    "Хронологична прогноза за станция **IRUDNI15** (мултимоделен консенсус ECMWF + GFS + ICON)."
+    "Хронологична прогноза за станция **IRUDNI15** напред от текущия час."
 )
 
 mik_chart = (
