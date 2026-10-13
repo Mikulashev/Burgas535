@@ -15,7 +15,7 @@ st.markdown(
 )
 
 
-# 1. ИЗВЛИЧАНЕ НА ПОЧАСОВА ПРОГНОЗА (От текущия час -> +24 часа)
+# 1. ИЗВЛИЧАНЕ НА ПОЧАСОВА ПРОГНОЗА (От текущия час -> +24 часа хронологично)
 @st.cache_data(ttl=1800)
 def fetch_hourly_forecast():
     try:
@@ -29,7 +29,7 @@ def fetch_hourly_forecast():
         precips = hourly_data["precipitation"]
         probs = hourly_data["precipitation_probability"]
 
-        # Започваме от точния час на отваряне
+        # Намираме точния час на отваряне
         now = datetime.datetime.now()
         start_idx = 0
         for i, t_str in enumerate(times):
@@ -44,15 +44,18 @@ def fetch_hourly_forecast():
         precips_slice = precips[start_idx:end_idx]
         probs_slice = probs[start_idx:end_idx]
 
-        # Подреждане хронологично отляво надясно (от сега към +24ч)
-        formatted_times = [
-            datetime.datetime.fromisoformat(t).strftime("%H:00 (%d.%m)")
-            for t in times_slice
-        ]
+        # Създаваме чисти етикети и запазваме оригиналната последователност чрез списък от обекти или числов индекс
+        hours_labels = []
+        datetime_objects = []
+        for t in times_slice:
+            dt = datetime.datetime.fromisoformat(t)
+            datetime_objects.append(dt)
+            hours_labels.append(dt.strftime("%H:00 (%d.%m)"))
 
         df_hourly = pd.DataFrame(
             {
-                "Час": formatted_times,
+                "Хронологичен ред": datetime_objects,
+                "Час": hours_labels,
                 "Очакван дъжд (мм)": precips_slice,
                 "Вероятност (%)": probs_slice,
                 "Температура (°C)": temps_slice,
@@ -64,9 +67,11 @@ def fetch_hourly_forecast():
 
         return df_hourly, round(total_rain, 1), max_prob
     except:
+        dummy_dt = [datetime.datetime.now() + datetime.timedelta(hours=i) for i in range(24)]
         dummy_df = pd.DataFrame(
             {
-                "Час": [f"Час {i+1}" for i in range(24)],
+                "Хронологичен ред": dummy_dt,
+                "Час": [dt.strftime("%H:00") for dt in dummy_dt],
                 "Очакван дъжд (мм)": [0.0] * 24,
                 "Вероятност (%)": [10] * 24,
                 "Температура (°C)": [18] * 24,
@@ -150,26 +155,28 @@ def get_station_network():
 
 stations = get_station_network()
 
-# --- СЕКЦИЯ 1 (НАЙ-ОТГОРЕ): ПОЧАСОВА ПРОГНОЗА СЛЕДВАЩИТЕ 24 ЧАСА (ХРОНОЛОГИЧНО) ---
-st.header(
-    "⏱️ Почасова прогноза за валежи (От момента на отваряне ➔ Към края на 24ч)"
-)
+# --- СЕКЦИЯ 1 (НАЙ-ОТГОРЕ): ПОЧАСОВА ПРОГНОЗА СЛЕДВАЩИТЕ 24 ЧАСА ---
+st.header("⏱️ Почасова прогноза за валежи (От момента на отваряне ➔ Напред)")
 st.markdown(
-    "Данните в графиката и таблицата се движат **отляво надясно**, започвайки от точния час на отваряне на приложението."
+    "Графиката и таблицата следват строг хронологичен ред **отляво надясно** (от текущия час към следващите 24 часа)."
 )
 
-# 1.1 Графика на валежите (Отляво надясно)
-st.subheader("📈 Графика на валежите по часове (мм)")
-chart_rain_df = df_hourly_forecast.set_index("Час")[["Очакван дъжд (мм)"]]
-st.bar_chart(chart_rain_df)
+# Подготвяме датафрейма за графиката така, че индексът да е реалният хронологичен ред
+chart_df = df_hourly_forecast.set_index("Хронологичен ред")[["Очакван дъжд (мм)"]]
+# Преименуваме индекса визуално към стринговия час за показване на графиката
+chart_df.index = df_hourly_forecast["Час"]
 
-# 1.2 Таблица по часове (Отгоре надолу хронологично)
+st.subheader("📈 Графика на валежите по часове (мм)")
+st.bar_chart(chart_df)
+
 st.subheader("📋 Детайлна часова таблица")
-st.dataframe(df_hourly_forecast, use_container_width=True)
+# Показваме таблицата без помощната колона за сортиране, за да е чиста и подредена
+display_table = df_hourly_forecast[["Час", "Очакван дъжд (мм)", "Вероятност (%)", "Температура (°C)"]]
+st.dataframe(display_table, use_container_width=True)
 
 st.markdown("---")
 
-# --- СЕКЦИЯ 2: ОБОБЩЕНИ ПРОГНОЗНИ КОЛИЧЕСТВА ЗА 24h ПЕРИОД ---
+# --- СЕКЦИЯ 2: ОБОБЩЕНИ КОЛИЧЕСТВА ЗА 24h ПЕРИОД ---
 st.header("📊 Очаквано общо количество за следващото денонощие")
 p_col1, p_col2 = st.columns(2)
 
@@ -193,7 +200,7 @@ with p_col2:
 
 st.markdown("---")
 
-# --- СЕКЦИЯ 3 (НАЙ-ДОЛУ): СРАВНИТЕЛНА ТАБЛИЦА НА СТАНЦИИТЕ В РЕАЛНО ВРЕМЕ ---
+# --- СЕКЦИЯ 3: СРАВНИТЕЛНА ТАБЛИЦА НА СТАНЦИИТЕ ---
 st.header("🌐 Станции в района (Живи данни за последните 24ч)")
 df_stations = pd.DataFrame.from_dict(stations, orient="index")
 st.dataframe(df_stations, use_container_width=True)
