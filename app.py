@@ -5,23 +5,22 @@ import requests
 import streamlit as st
 
 st.set_page_config(
-    page_title="МЕТЕО Дашборд | Меден Рудник - Бл. 535",
-    page_icon="🏢",
+    page_title="МЕТЕО Дашборд | Меден Рудник & Микулашев",
+    page_icon="⚠️",
     layout="wide",
 )
 
-st.title("🏢 Хипер-локален Метео Дашборд: Бл. 535 (Терминал Меден Рудник)")
+st.title("🌧️ Хипер-локален Метео Дашборд за Ранно Предупреждение")
 st.markdown(
-    "Прецизна 24-часова почасова прогноза за валежите и риск от наводнения, фокусирана строго върху района на **блок 535 / Терминал Меден рудник** (70м н.в.)."
+    "Мониторинг с отделни 24-часови прогнози и станции за **ж.к. Меден Рудник (Бл. 535)** и **Микулашев / Център**."
 )
 
 
-# 1. ИЗВЛИЧАНЕ НА ПОЧАСОВА ПРОГНОЗА СТРОГО ЗА КООРДИНАТИТЕ НА БЛ. 535 / ТЕРМИНАЛ МЕДЕН РУДНИК
+# Функция за извличане на динамична почасова прогноза по координати
 @st.cache_data(ttl=1800)
-def fetch_hourly_forecast_block535():
+def fetch_hourly_forecast(lat, lon):
     try:
-        # Точни координати за район блок 535 / Терминал Меден рудник (по-висока част, ~70м н.в.)
-        url = "https://api.open-meteo.com/v1/forecast?latitude=42.4785&longitude=27.4345&hourly=temperature_2m,precipitation_probability,precipitation&timezone=Europe/Sofia"
+        url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&hourly=temperature_2m,precipitation_probability,precipitation&timezone=Europe/Sofia"
         response = requests.get(url)
         data = response.json()
 
@@ -31,7 +30,6 @@ def fetch_hourly_forecast_block535():
         precips = hourly_data["precipitation"]
         probs = hourly_data["precipitation_probability"]
 
-        # Намираме точния час на отваряне
         now = datetime.datetime.now()
         start_idx = 0
         for i, t_str in enumerate(times):
@@ -73,17 +71,24 @@ def fetch_hourly_forecast_block535():
                 "Температура (°C)": [18] * 24,
             }
         )
-        return dummy_df, 4.5, 65
+        return dummy_df, 4.0, 50
 
 
-df_hourly_forecast, api_rain_forecast, api_rain_prob = (
-    fetch_hourly_forecast_block535()
+# 1. ПРОГНОЗА ЗА МЕДЕН РУДНИК (Бл. 535 / Терминал) - Координати: 42.4785, 27.4345
+df_mr_forecast, mr_rain_total, mr_max_prob = fetch_hourly_forecast(
+    42.4785, 27.4345
+)
+
+# 2. ПРОГНОЗА ЗА МИКУЛАСЕВ / ЦЕНТЪР - Координати: 42.5048, 27.4626
+df_mik_forecast, mik_rain_total, mik_max_prob = fetch_hourly_forecast(
+    42.5048, 27.4626
 )
 
 
-# 2. МРЕЖА ОТ СТАНЦИИ В РАЙОНА
-def get_station_network():
+# Станции по райони
+def get_stations():
     return {
+        # РАЙОН МЕДЕН РУДНИК (Първи)
         "Меден Рудник - Бл. 535 (VH)": {
             "Район": "Меден Рудник",
             "Код": "VH-535",
@@ -124,7 +129,8 @@ def get_station_network():
             "Влажност (%)": 83,
             "Дъжд 24ч (мм)": 1.0,
         },
-        "Микулашев (Сравнение - ниска част)": {
+        # РАЙОН МИКУЛАСЕВ / ЦЕНТЪР
+        "Микулашев (Weathercloud)": {
             "Район": "Микулашев / Център",
             "Код": "d9323277135",
             "Мрежа": "Weathercloud (6m н.в.)",
@@ -132,61 +138,109 @@ def get_station_network():
             "Влажност (%)": 78,
             "Дъжд 24ч (мм)": 0.8,
         },
+        "IBANEV3": {
+            "Район": "Микулашев / Център",
+            "Код": "IBANEV3",
+            "Мрежа": "Weather Underground",
+            "Темп. (°C)": 19.0,
+            "Влажност (%)": 80,
+            "Дъжд 24ч (мм)": 0.9,
+        },
+        "IBURGA13": {
+            "Район": "Микулашев / Център",
+            "Код": "IBURGA13",
+            "Мрежа": "Weather Underground",
+            "Темп. (°C)": 19.4,
+            "Влажност (%)": 77,
+            "Дъжд 24ч (мм)": 0.7,
+        },
     }
 
 
-stations = get_station_network()
+stations = get_stations()
 
-# --- СЕКЦИЯ 1: ПОЧАСОВА ПРОГНОЗА СТРОГО ЗА БЛ. 535 / ТЕРМИНАЛ ---
-st.header(
-    "⏱️ Почасова прогноза за валежи: Бл. 535 / Терминал Меден Рудник (От сега ➔ Напред)"
-)
-st.markdown(
-    "Графиката и таблицата показват прогнозата **строго за микроклимата около блок 535 и транспортния терминал**, подредени хронологично отляво надясно."
-)
+# ==========================================
+# СЕКЦИЯ 1: МЕДЕН РУДНИК (БЛ. 535 / ТЕРМИНАЛ)
+# ==========================================
+st.header("🏢 1. Район: ж.к. Меден Рудник (Бл. 535 / Терминал)")
+st.markdown("Хронологична прогноза от момента на отваряне за следващите 24 часа.")
 
-chart = (
-    alt.Chart(df_hourly_forecast)
-    .mark_bar()
+mr_chart = (
+    alt.Chart(df_mr_forecast)
+    .mark_bar(color="#1f77b4")
     .encode(
         x=alt.X(
             "Час:N",
-            sort=list(df_hourly_forecast["Час"]),
-            title="Час (Хронологично от сега)",
+            sort=list(df_mr_forecast["Час"]),
+            title="Час (Меден Рудник)",
         ),
         y=alt.Y("Очакван дъжд (мм):Q", title="Очакван дъжд (мм)"),
         tooltip=["Час", "Очакван дъжд (мм)", "Вероятност (%)", "Температура (°C)"],
     )
     .interactive()
 )
+st.altair_chart(mr_chart, use_container_width=True)
 
-st.altair_chart(chart, use_container_width=True)
-
-st.subheader("📋 Детайлна часова таблица за бл. 535 / Терминал")
-st.dataframe(df_hourly_forecast, use_container_width=True)
-
-st.markdown("---")
-
-# --- СЕКЦИЯ 2: ОБЩО КОЛИЧЕСТВО ЗА 24 ЧАСА ЗА РАЙОНА ---
-st.header("📊 Очаквано общо количество за следващото денонощие (Бл. 535)")
-col_m1, col_m2 = st.columns(2)
-
-with col_m1:
+mr_col1, mr_col2 = st.columns(2)
+with mr_col1:
     st.metric(
-        "Прогнозен дъжд (Бл. 535 / Терминал)",
-        f"{api_rain_forecast} мм",
-        f"Макс. вероятност: {api_rain_prob}%",
+        "Очаквано общо (24ч - Меден Рудник)",
+        f"{mr_rain_total} мм",
+        f"Макс. вероятност: {mr_max_prob}%",
     )
-    st.progress(int(api_rain_prob))
+    st.progress(int(mr_max_prob))
+with mr_col2:
+    st.subheader("📋 Часова таблица (Меден Рудник)")
+    st.dataframe(df_mr_forecast, use_container_width=True)
 
-with col_m2:
-    st.info(
-        "💡 **Статус на риска:** Стойности на валежите над 5 мм/ч в зоната на терминала и бл. 535 изискват повишено внимание поради релефните особености на мястото."
-    )
+# Таблица със станциите за Меден Рудник
+st.markdown("**Станции в Меден Рудник:**")
+df_mr_stations = pd.DataFrame.from_dict(
+    {k: v for k, v in stations.items() if v["Район"] == "Меден Рудник"},
+    orient="index",
+)
+st.dataframe(df_mr_stations, use_container_width=True)
 
 st.markdown("---")
 
-# --- СЕКЦИЯ 3: СРАВНИТЕЛНА ТАБЛИЦА НА СТАНЦИИТЕ В РАЙОНА ---
-st.header("🌐 Локални станции в ж.к. Меден Рудник и сравнение")
-df_stations = pd.DataFrame.from_dict(stations, orient="index")
-st.dataframe(df_stations, use_container_width=True)
+# ==========================================
+# СЕКЦИЯ 2: МИКУЛАСЕВ / ЦЕНТЪР
+# ==========================================
+st.header("🏠 2. Район: Микулашев / Център")
+st.markdown("Хронологична прогноза от момента на отваряне за следващите 24 часа.")
+
+mik_chart = (
+    alt.Chart(df_mik_forecast)
+    .mark_bar(color="#2ca02c")
+    .encode(
+        x=alt.X(
+            "Час:N",
+            sort=list(df_mik_forecast["Час"]),
+            title="Час (Микулашев / Център)",
+        ),
+        y=alt.Y("Очакван дъжд (мм):Q", title="Очакван дъжд (мм)"),
+        tooltip=["Час", "Очакван дъжд (мм)", "Вероятност (%)", "Температура (°C)"],
+    )
+    .interactive()
+)
+st.altair_chart(mik_chart, use_container_width=True)
+
+mik_col1, mik_col2 = st.columns(2)
+with mik_col1:
+    st.metric(
+        "Очаквано общо (24ч - Микулашев)",
+        f"{mik_rain_total} мм",
+        f"Макс. вероятност: {mik_max_prob}%",
+    )
+    st.progress(int(mik_max_prob))
+with mik_col2:
+    st.subheader("📋 Часова таблица (Микулашев)")
+    st.dataframe(df_mik_forecast, use_container_width=True)
+
+# Таблица със станциите за Микулашев
+st.markdown("**Станции в Микулашев / Център:**")
+df_mik_stations = pd.DataFrame.from_dict(
+    {k: v for k, v in stations.items() if v["Район"] == "Микулашев / Център"},
+    orient="index",
+)
+st.dataframe(df_mik_stations, use_container_width=True)
